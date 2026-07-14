@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.DS_Store
+# local editor / Claude Code config
+.claude/
+# never commit captured session cookies
+gopro-auth.json
+*.cookie
+.env
+# download state / media (in case someone points --out at the repo)
+.gopro-download-state.json
+*.part

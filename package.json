@@ -1,0 +1,18 @@
+{
+  "name": "gopro-media-downloader",
+  "version": "1.0.0",
+  "description": "Download your entire GoPro media library from the command line, bypassing the website's 25-at-a-time limit. Resumable, zero dependencies.",
+  "type": "module",
+  "bin": {
+    "gopro-download": "gopro-download.mjs"
+  },
+  "scripts": {
+    "start": "node gopro-download.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "keywords": ["gopro", "download", "media", "backup", "video", "cli"],
+  "license": "MIT",
+  "dependencies": {}
+}
