@@ -25,6 +25,12 @@ GoPro's website only *shows* a "download up to 25" button, but the underlying AP
 Signed URLs expire after ~1 hour, so URLs are generated **just before** each
 download and re-minted automatically if a large transfer gets interrupted.
 
+Recordings the camera split into multiple **chapters** (anything that ends up
+over ~4GB as a single file, e.g. long 4K/5K clips) are stored by GoPro as one
+media item but multiple downloadable parts. The tool detects every chapter and
+downloads each one (saved as separate files, e.g. `GX010701.MP4` +
+`GX020701.MP4`) — not just the first — so nothing gets silently truncated.
+
 ---
 
 ## Requirements
@@ -52,9 +58,23 @@ node gopro-download.mjs --out /Volumes/MyDrive/GoPro --dry-run
 node gopro-download.mjs --out /Volumes/MyDrive/GoPro
 ```
 
-The first run shows a macOS **Keychain popup** ("… wants to use your confidential
-information stored in Chrome Safe Storage") — click **Allow**. This lets the tool
-read the browser cookie that authenticates you. It never leaves your machine.
+### About the Keychain / password prompt
+
+The first run triggers a macOS **Keychain** prompt — either a popup saying
+*"gopro-download wants to use your confidential information stored in Chrome
+Safe Storage"* (click **Allow**, or **Always Allow** so it stops asking), or,
+if your login keychain happens to be locked, macOS first asks for **your Mac
+user account password** to unlock it.
+
+That's your **Mac login password, not your GoPro password** — GoPro's own
+password is never touched; the tool only ever reads a session cookie. Here's
+why it's needed: Chrome encrypts the cookies it stores on disk, and it keeps
+the decryption key in your Mac's login Keychain (an item called "Chrome Safe
+Storage"). To read your `gopro.com` session cookie the same way Chrome itself
+does, this tool has to ask the Keychain for that key — which is exactly the
+system dialog you're seeing. Everything happens locally: the key and the
+cookie never leave your machine, and this tool has zero network calls other
+than to `api.gopro.com` and GoPro's CDN.
 
 Files are organized by capture date:
 
@@ -62,6 +82,8 @@ Files are organized by capture date:
 /Volumes/MyDrive/GoPro/
   2025-12-06/GX010042.MP4
   2026-01-19/GX011208.MP4
+  2023-12-08/GX010701.MP4        ← chapter 1 of a long recording
+  2023-12-08/GX020701.MP4        ← chapter 2 of the same recording
   ...
   .gopro-download-state.json   ← progress tracker (safe to delete; disk is source of truth)
 ```
@@ -130,7 +152,10 @@ error, grab a fresh one.
 
 - **`401 / session expired`** — re-open the media library in your browser (re-login),
   then run again. For the manual method, grab a fresh cookie.
-- **Keychain popup keeps appearing** — click *Always Allow*.
+- **Keychain / password prompt keeps appearing** — click *Always Allow* on the
+  Chrome Safe Storage popup so macOS remembers this tool. See
+  [About the Keychain / password prompt](#about-the-keychain--password-prompt)
+  for what it's asking and why.
 - **`No gopro.com cookies found`** — you're not logged in, or in a different browser/
   profile. Use `--browser` / `--profile`, or the manual method.
 - **Wrong browser profile** — pass `--profile "Profile 1"` (folder name under the
@@ -143,6 +168,9 @@ error, grab a fresh one.
 - This uses an **undocumented** API; GoPro could change it at any time.
 - Respect GoPro's Terms of Service and only download media you own.
 - `.part` files are in-progress downloads; they become the final file on completion.
+- Multi-chapter recordings (long clips split by the camera at ~4GB) download as
+  multiple sibling files per item; the on-disk total is the source of truth, not
+  the single-file size shown for the item in GoPro's library UI.
 
 ## License
 

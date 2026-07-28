@@ -71,20 +71,19 @@ try {
       const item = queue[cursor++];
       const rel = path.relative(OUT, item.dest);
       try {
-        fs.mkdirSync(path.dirname(item.dest), { recursive: true });
-        const res = await downloadResumable({
-          mint: () => gp.getDownloadUrl(item.id, QUALITY),
-          destPath: item.dest,
-          expectedSize: item.size,
-          onProgress: (delta) => { doneBytes += delta; },
-        });
+        const chapterResults = await downloadItemChapters(gp, item, QUALITY, (delta) => { doneBytes += delta; });
+        const totalItemBytes = chapterResults.reduce((s, c) => s + c.bytes, 0);
         item.status = 'done';
-        item.bytes = res.bytes;
-        state.media[item.id] = { filename: item.filename, dest: item.dest, size: item.size, status: 'done', bytes: res.bytes };
+        item.bytes = totalItemBytes;
+        state.media[item.id] = {
+          filename: item.filename, dest: item.dest, size: item.size, status: 'done',
+          bytes: totalItemBytes, chapters: chapterResults.map(c => ({ dest: c.dest, bytes: c.bytes })),
+        };
         doneCount++;
         saveState(state);
         const pct = ((doneCount / plan.length) * 100).toFixed(1);
-        log(`✓ [${doneCount}/${plan.length} ${pct}%] ${rel} (${mb(res.bytes)} MB)  |  ${overall(doneBytes, totalBytes, startedAt)}`);
+        const chapterNote = chapterResults.length > 1 ? ` [${chapterResults.length} chapters]` : '';
+        log(`✓ [${doneCount}/${plan.length} ${pct}%] ${rel}${chapterNote} (${mb(totalItemBytes)} MB)  |  ${overall(doneBytes, totalBytes, startedAt)}`);
       } catch (err) {
         if (err instanceof AuthError) { console.error(`\n✗ ${err.message}`); process.exit(2); }
         failed++;
@@ -114,6 +113,43 @@ try {
 }
 
 // ---------- helpers ----------
+
+// Downloads every chapter of a media item (usually 1; large recordings split
+// into several by the camera — see getDownloadChapters). A chapter whose file
+// is already fully on disk (no leftover .part) is trusted and skipped, so
+// re-runs only fetch what's actually missing.
+async function downloadItemChapters(gp, item, quality, onProgress) {
+  const chapters = await gp.getDownloadChapters(item.id, quality);
+  const results = [];
+  for (let i = 0; i < chapters.length; i++) {
+    const ch = chapters[i];
+    // Chapter 1 always keeps item.dest (matches the library's existing naming/
+    // collision-avoidance); only later chapters get a sibling path, with the
+    // extension case matched to item.dest since the CDN's own filename casing
+    // can differ from the catalog's (macOS default filesystems are case-
+    // insensitive so this wouldn't be caught by testing alone).
+    const dest = i === 0 ? item.dest
+      : path.join(path.dirname(item.dest), sanitize(ch.filename.replace(/\.[^.]+$/, path.extname(item.dest))));
+    const partPath = dest + '.part';
+    if (fs.existsSync(dest) && !fs.existsSync(partPath)) {
+      results.push({ dest, bytes: fs.statSync(dest).size });
+      onProgress(fs.statSync(dest).size);
+      continue;
+    }
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    const res = await downloadResumable({
+      mint: async () => {
+        const fresh = await gp.getDownloadChapters(item.id, quality);
+        return fresh.find(c => c.itemNumber === ch.itemNumber) || fresh[i] || fresh[0];
+      },
+      destPath: dest,
+      onProgress,
+    });
+    results.push({ dest, bytes: res.bytes });
+  }
+  return results;
+}
+
 function planFiles(media, state) {
   const used = new Set();
   return media.map(m => {
