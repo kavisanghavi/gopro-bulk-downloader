@@ -129,7 +129,7 @@ async function downloadItemChapters(gp, item, quality, onProgress) {
     // can differ from the catalog's (macOS default filesystems are case-
     // insensitive so this wouldn't be caught by testing alone).
     const dest = i === 0 ? item.dest
-      : path.join(path.dirname(item.dest), sanitize(ch.filename.replace(/\.[^.]+$/, path.extname(item.dest))));
+      : insideOut(path.join(path.dirname(item.dest), sanitize(ch.filename.replace(/\.[^.]+$/, path.extname(item.dest)))));
     const partPath = dest + '.part';
     if (fs.existsSync(dest) && !fs.existsSync(partPath)) {
       results.push({ dest, bytes: fs.statSync(dest).size });
@@ -140,7 +140,13 @@ async function downloadItemChapters(gp, item, quality, onProgress) {
     const res = await downloadResumable({
       mint: async () => {
         const fresh = await gp.getDownloadChapters(item.id, quality);
-        return fresh.find(c => c.itemNumber === ch.itemNumber) || fresh[i] || fresh[0];
+        // Match by item_number only when it's unambiguous; otherwise by position.
+        // Never fall back to a different chapter — that would silently save
+        // chapter 1's data under chapter 2's name.
+        const byNum = fresh.filter(c => c.itemNumber === ch.itemNumber);
+        const match = byNum.length === 1 ? byNum[0] : fresh[i];
+        if (!match || fresh.length !== chapters.length) throw new Error(`Chapter list for ${item.id} changed between requests`);
+        return match;
       },
       destPath: dest,
       onProgress,
@@ -153,13 +159,14 @@ async function downloadItemChapters(gp, item, quality, onProgress) {
 function planFiles(media, state) {
   const used = new Set();
   return media.map(m => {
-    const date = (m.captured_at || m.created_at || '').slice(0, 10) || 'undated';
+    const rawDate = (m.captured_at || m.created_at || '').slice(0, 10);
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : 'undated';
     const safe = sanitize(m.filename || `${m.id}.mp4`);
-    let dest = path.join(OUT, date, safe);
+    let dest = insideOut(path.join(OUT, date, safe));
     // Disambiguate collisions (same filename, different media id) with a short id suffix.
     if (used.has(dest)) {
       const ext = path.extname(safe);
-      dest = path.join(OUT, date, `${path.basename(safe, ext)}_${String(m.id).slice(-6)}${ext}`);
+      dest = insideOut(path.join(OUT, date, sanitize(`${path.basename(safe, ext)}_${String(m.id).slice(-6)}${ext}`)));
     }
     used.add(dest);
     const prev = state.media[m.id];
@@ -195,7 +202,17 @@ function saveState(state) {
   try { fs.writeFileSync(STATE_FILE, JSON.stringify(state)); } catch {}
 }
 
-function sanitize(name) { return name.replace(/[\/\\:*?"<>|]/g, '_').trim() || 'file'; }
+// Filenames come from GoPro's API; treat them as untrusted so a malformed
+// value can never write outside --out.
+function sanitize(name) {
+  const s = String(name).replace(/[\/\\:*?"<>|\x00-\x1f]/g, '_').trim();
+  return !s || /^\.+$/.test(s) ? 'file' : s;
+}
+function insideOut(dest) {
+  const rel = path.relative(OUT, dest);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`Refusing to write outside --out: ${dest}`);
+  return dest;
+}
 function gb(b) { return (b / 1e9).toFixed(1); }
 function mb(b) { return (b / 1e6).toFixed(1); }
 function overall(done, total, startedAt) {
