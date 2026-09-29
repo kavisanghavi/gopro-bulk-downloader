@@ -7,9 +7,11 @@ Download your **entire** GoPro cloud media library from the command line — no
 - ✅ **Resumable** — Ctrl-C and re-run; finished files skip, partial files continue
 - ✅ Handles thousands of files / hundreds of GB, saved anywhere (e.g. an external drive)
 - ✅ **Zero dependencies** — just Node. Uses your existing browser login; no password needed
-- ✅ One file to share; MIT licensed
+- ✅ **Read-only** — never modifies or deletes anything in your GoPro account
+- ✅ Free for personal / non-commercial use ([license](#license))
 
 > Use it only for **your own** media that you have the right to download.
+> Not affiliated with or endorsed by GoPro, Inc.
 
 ---
 
@@ -48,8 +50,8 @@ downloads each one (saved as separate files, e.g. `GX010701.MP4` +
 ## Quick start
 
 ```bash
-git clone <this-repo> gopro-media-downloader
-cd gopro-media-downloader
+git clone https://github.com/kavisanghavi/gopro-bulk-downloader.git
+cd gopro-bulk-downloader
 
 # Dry run first — lists what would download, nothing is written:
 node gopro-download.mjs --out /Volumes/MyDrive/GoPro --dry-run
@@ -60,11 +62,18 @@ node gopro-download.mjs --out /Volumes/MyDrive/GoPro
 
 ### About the Keychain / password prompt
 
-The first run triggers a macOS **Keychain** prompt — either a popup saying
-*"gopro-download wants to use your confidential information stored in Chrome
-Safe Storage"* (click **Allow**, or **Always Allow** so it stops asking), or,
-if your login keychain happens to be locked, macOS first asks for **your Mac
-user account password** to unlock it.
+The first run triggers a macOS **Keychain** prompt — a popup saying
+*"security wants to use your confidential information stored in "Chrome Safe
+Storage" in your keychain"* (`security` is macOS's built-in Keychain command-line
+tool, which this script calls). Click **Allow**. If your login keychain happens
+to be locked, macOS first asks for **your Mac user account password** to unlock it.
+
+> **Click "Allow", not "Always Allow".** "Always Allow" permanently lets the
+> `security` tool read Chrome's cookie encryption key without asking — for
+> *any* program on your Mac, not just this one. One prompt per run is the
+> safer trade-off. If you already clicked it, you can undo it in **Keychain
+> Access → "Chrome Safe Storage" → Access Control**.
+
 
 That's your **Mac login password, not your GoPro password** — GoPro's own
 password is never touched; the tool only ever reads a session cookie. Here's
@@ -138,13 +147,17 @@ If you're not on macOS Chrome, provide the cookie yourself:
 4. Pass it to the tool:
 
 ```bash
-export GOPRO_COOKIE='paste-the-cookie-value-here'
+read -rs GOPRO_COOKIE && export GOPRO_COOKIE   # paste, press Enter (input is hidden)
 node gopro-download.mjs --out /Volumes/MyDrive/GoPro
 ```
 
-You can also paste a whole **"Copy as cURL"** string to `--cookie` / `GOPRO_COOKIE`;
-the tool extracts the cookie header from it. Cookies expire — if you get an auth
-error, grab a fresh one.
+Using `read -rs` keeps the cookie out of your shell history. (`--cookie <value>`
+also works, but the value is visible to other processes via `ps` and ends up in
+history — prefer the env var.) Your session cookie is equivalent to being logged
+in to your GoPro account, so don't paste it anywhere else.
+
+You can also paste a whole **"Copy as cURL"** string; the tool extracts the
+cookie from it. Cookies expire — if you get an auth error, grab a fresh one.
 
 ---
 
@@ -152,10 +165,10 @@ error, grab a fresh one.
 
 - **`401 / session expired`** — re-open the media library in your browser (re-login),
   then run again. For the manual method, grab a fresh cookie.
-- **Keychain / password prompt keeps appearing** — click *Always Allow* on the
-  Chrome Safe Storage popup so macOS remembers this tool. See
-  [About the Keychain / password prompt](#about-the-keychain--password-prompt)
-  for what it's asking and why.
+- **Keychain / password prompt appears every run** — that's expected; click
+  *Allow*. See [About the Keychain / password prompt](#about-the-keychain--password-prompt)
+  for why *Always Allow* isn't recommended. To avoid the prompt entirely, use
+  the [manual cookie method](#manual-cookie-capture-any-os--browser).
 - **`No gopro.com cookies found`** — you're not logged in, or in a different browser/
   profile. Use `--browser` / `--profile`, or the manual method.
 - **Wrong browser profile** — pass `--profile "Profile 1"` (folder name under the
@@ -172,6 +185,38 @@ error, grab a fresh one.
   multiple sibling files per item; the on-disk total is the source of truth, not
   the single-file size shown for the item in GoPro's library UI.
 
+## Security & privacy
+
+This tool handles your GoPro login session, so here's exactly what it does:
+
+- **What it reads:** only cookies for `gopro.com` / `*.gopro.com` from your
+  browser's cookie database. It uses the "Chrome Safe Storage" Keychain key to
+  decrypt them; that key stays in memory and is never written to disk or logged.
+  A temporary copy of the cookie database is made in a private temp folder and
+  deleted right after.
+- **Where it connects:** `api.gopro.com` (listing media, requesting download
+  links) and the HTTPS download links GoPro returns. Your cookie is sent **only**
+  to `api.gopro.com`. There is no telemetry, analytics, or any other server.
+- **What it changes:** nothing in your GoPro account — every API call is a
+  read-only `GET`. On disk it only writes inside your `--out` folder.
+- **Dependencies:** none. ~600 lines of plain Node.js across 4 files — you can
+  read the whole thing in a few minutes. To check every network call yourself:
+  `grep -n "fetch(" gopro-download.mjs lib/*.mjs`.
+- Prefer not to grant Keychain access at all? Use the
+  [manual cookie method](#manual-cookie-capture-any-os--browser) — the tool then
+  never touches your browser's files.
+
+Found a security issue? Please open a GitHub issue (or contact me privately via
+my GitHub profile for anything sensitive).
+
+---
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+**Free for personal and other non-commercial use** under the
+[PolyForm Noncommercial License 1.0.0](LICENSE) — back up your own library,
+share it with friends, modify it, all fine.
+
+**Commercial use** (using it in or for a business, a paid service, or a
+product) requires a separate commercial license — reach out via
+[GitHub](https://github.com/kavisanghavi).

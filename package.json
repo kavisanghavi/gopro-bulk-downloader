@@ -13,6 +13,6 @@
     "node": ">=22.5.0"
   },
   "keywords": ["gopro", "download", "media", "backup", "video", "cli"],
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "dependencies": {}
 }
